@@ -43,8 +43,7 @@ namespace ObstacleCourse
             }
 
             MakeCourse.intro_obstacles(500);
-
-            //MakeCourse.generate_obstacles(2500);
+            MakeCourse.generated_up_to = 5500;
         }
 
         private void Form1_Load(object sender, EventArgs e) { }
@@ -87,6 +86,9 @@ namespace ObstacleCourse
                     this.best_distance = a.x;
                 }
             }
+
+            //Generate new chunks ahead of the leading agent
+            MakeCourse.generate_ahead(this.best_distance);
 
             //Cull obstacles that are behind all live agents
             int cull_margin = 500;
