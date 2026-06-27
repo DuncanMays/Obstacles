@@ -31,6 +31,8 @@ namespace ObstacleCourse
             return colours[i];
         }
 
+        public virtual int cull_radius { get { return this.rad; } }
+
         public virtual void step() { }
 
         public void draw(PaintEventArgs e)
@@ -82,6 +84,8 @@ namespace ObstacleCourse
         int start_x;
         int start_y;
 
+        public override int cull_radius { get { return this.big_radius + this.rad; } }
+
         public Spinner(int x, int y, int rad, int big_rad, double theta, double theta_speed, Color c) : base(x, y, rad, c)
         {
             this.start_y = y;
@@ -107,6 +111,8 @@ namespace ObstacleCourse
         double theta;
         double theta_speed;
 
+        public override int cull_radius { get { return this.max_rad; } }
+
         public Grower(int x, int y, int min_rad, int max_rad, double theta, double theta_speed, Color c) : base(x, y, min_rad, c)
         {
             this.min_rad = min_rad;
@@ -131,6 +137,8 @@ namespace ObstacleCourse
         int start_y;
         double chase_speed;
         List<Agent> targets = new List<Agent>();
+
+        public override int cull_radius { get { return this.zone_radius; } }
 
         public Tracker(int x, int y, int rad, int zone_radius, double chase_speed, Color c) : base(x, y, rad, c)
         {

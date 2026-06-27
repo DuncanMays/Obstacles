@@ -88,6 +88,14 @@ namespace ObstacleCourse
                 }
             }
 
+            //Cull obstacles that are behind all live agents
+            int cull_margin = 500;
+            if (Globals.live_agents.Count > 0)
+            {
+                int min_x = Globals.live_agents.Min(a => a.x);
+                Globals.obstacles.RemoveAll(o => o.x + o.cull_radius < min_x - cull_margin);
+            }
+
             //Updates window_slide
             if (this.best_distance > this.Width - 200)
             {
