@@ -109,6 +109,7 @@ namespace ObstacleCourse
             foreach (Obstacle o in Globals.obstacles)
             {
                 o.draw(e);
+                if (o is Tracker t) { t.draw_zone(e); }
             }
 
             DrawBorder(e, Globals.top_border);

@@ -115,6 +115,35 @@
                 0.007,
                 Color.Yellow
             );
+
+            // Grower gauntlet — alternating sides force agents to weave
+            int mid = Globals.top_border + (Globals.bottom_border - Globals.top_border) / 2;
+            int grower_top = Globals.top_border + 150;
+            int grower_bot = Globals.bottom_border - 150;
+            double grower_speed = 0.008;
+
+            for (int i = 0; i < 5; i++)
+            {
+                int gx = x_disp + 2000 + i * 250;
+                double phase = i * Math.PI / 2;
+
+                new Grower(gx, grower_top, 30, 160, phase, grower_speed, Color.Green);
+                new Grower(gx, grower_bot, 30, 160, phase + Math.PI, grower_speed, Color.Green);
+            }
+
+            // Three trackers in quick succession
+            int tracker_start = x_disp + 3500;
+            for (int i = 0; i < 3; i++)
+            {
+                new Tracker(
+                    tracker_start + i * 500,
+                    mid,
+                    40,
+                    200,
+                    2.5,
+                    Color.Magenta
+                );
+            }
         }
 
         //public static void generate_obstacles(int x_disp)

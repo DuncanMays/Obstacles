@@ -29,6 +29,7 @@ namespace ObstacleCourse
             this.x = x;
             this.y = y;
             this.theta = 0;
+            this.ta = 0;
             this.speed = speed;
             this.brain = new Brain();
 
@@ -62,18 +63,31 @@ namespace ObstacleCourse
                 d[i] = this.eyes[i].get_distance(this) / this.eyes[i].max_dist;
             }
 
-            //make decisions with eye input
+            //run brain on input
             torch.Tensor y = this.brain.infer(d, this.theta);
 
-            //hand-coded rules
+            //=====================================================
+
+            //hand-coded rules to decide where to turn
             if (d[0] < 0.3) { this.theta = this.theta - 0.2; }
             if (d[2] < 0.15) { this.speed = 1; } else { this.speed = 3; }
             if (d[4] < 0.3) { this.theta = this.theta + 0.2; }
 
+            // add random noise to ta
             this.ta = this.ta + 0.0005 * (Globals.rnd.Next(0, 100) - 50);
+
+            // bias noise towards pointing theta forward
+            if (this.theta > 0) { this.ta -= 0.003; }
+            if (this.theta < 0) { this.ta += 0.003; }
+
+            // bound noise from above and below
             this.ta = Math.Max(Math.Min(0.05, this.ta), -0.05);
-            this.theta = this.theta + ta;
+
+            // apply noise
+            this.theta = this.theta + this.ta;
             this.theta = this.theta % (2 * Math.PI);
+
+            //=====================================================
 
             //Move in the direction theta by the distance speed
             this.x = this.x + (int)(this.speed * Math.Cos(this.theta));
