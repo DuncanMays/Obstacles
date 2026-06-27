@@ -25,6 +25,9 @@ namespace ObstacleCourse
     {
 
         int best_distance = 0;
+        int generation = 0;
+        Brain brain;
+        PPOTrainer trainer;
 
         public Form1()
         {
@@ -37,41 +40,43 @@ namespace ObstacleCourse
             Globals.top_border = 100;
             Globals.bottom_border = this.Height - 100;
 
-            for (int i = 0; i < 100; i++)
-            {
-                new Agent(100, Globals.rnd.Next(Globals.top_border + 100, Globals.bottom_border - 100), 5);
-            }
+            this.brain = new Brain();
+            this.trainer = new PPOTrainer(this.brain);
 
+            SpawnAgents();
             MakeCourse.intro_obstacles(500);
             MakeCourse.generated_up_to = 5500;
+        }
+
+        private void SpawnAgents()
+        {
+            for (int i = 0; i < 50; i++)
+            {
+                new Agent(100, Globals.rnd.Next(Globals.top_border + 100, Globals.bottom_border - 100), 5, this.brain);
+            }
         }
 
         private void Form1_Load(object sender, EventArgs e) { }
 
         private void WindowTimer_Tick(object sender, EventArgs e)
         {
-            //updates obstacles
             foreach (Obstacle o in Globals.obstacles)
             {
                 o.step();
             }
 
-            //since live_agents might change during the iteration (agents might die) so we need to iterate over a copy
             List<Agent> iter_agents = new List<Agent>(Globals.live_agents.Count);
             Globals.live_agents.ForEach((a) => { iter_agents.Add(a); });
 
             foreach (Agent a in iter_agents)
             {
-                //updates agents
                 a.step();
 
-                //checks if any agents are out of bounds
                 if ((a.y < Globals.top_border) | (a.y > Globals.bottom_border))
                 {
                     a.die();
                 }
 
-                //checks if any agents are colliding with an obstacle
                 foreach (Obstacle o in Globals.obstacles)
                 {
                     if (o.check_collision(a.x, a.y))
@@ -80,32 +85,65 @@ namespace ObstacleCourse
                     }
                 }
 
-                //records the furthest ahead agent
                 if (a.x > this.best_distance)
                 {
                     this.best_distance = a.x;
                 }
             }
 
-            //Generate new chunks ahead of the leading agent
             MakeCourse.generate_ahead(this.best_distance);
 
-            //Cull obstacles that are behind all live agents
-            int cull_margin = 500;
+            int cull_margin = 1500;
             if (Globals.live_agents.Count > 0)
             {
                 int min_x = Globals.live_agents.Min(a => a.x);
                 Globals.obstacles.RemoveAll(o => o.x + o.cull_radius < min_x - cull_margin);
             }
 
-            //Updates window_slide
+            if (Globals.live_agents.Count == 0)
+            {
+                EndGeneration();
+            }
+
             if (this.best_distance > this.Width - 200)
             {
                 Globals.window_slide = this.Width - this.best_distance - 200;
             }
 
-            //triggers this.Form1_Paint
             this.Invalidate();
+        }
+
+        private void EndGeneration()
+        {
+            int max_dist = 0;
+            float total_reward = 0;
+            int total_steps = 0;
+
+            foreach (Agent a in Globals.agents)
+            {
+                if (a.x > max_dist) max_dist = a.x;
+                total_reward += a.trajectory.rewards.Sum();
+                total_steps += a.trajectory.rewards.Count;
+            }
+
+            float mean_reward = total_steps > 0 ? total_reward / Globals.agents.Count : 0;
+
+            this.trainer.train(Globals.agents);
+            this.generation++;
+
+            this.Text = $"Obstacle Course — Gen {this.generation} | Max dist: {max_dist} | Mean reward: {mean_reward:F2}";
+
+            Globals.agents.Clear();
+            Globals.live_agents.Clear();
+            Globals.obstacles.Clear();
+            Globals.window_slide = 0;
+            this.best_distance = 0;
+
+            MakeCourse.generated_up_to = 0;
+            MakeCourse.intro_obstacles(500);
+            MakeCourse.generated_up_to = 5500;
+
+            SpawnAgents();
         }
 
         private void Form1_Paint(object sender, PaintEventArgs e)

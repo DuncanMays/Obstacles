@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
@@ -11,29 +11,47 @@ using static TorchSharp.torch.nn;
 
 namespace ObstacleCourse
 {
+    public class Trajectory
+    {
+        public List<float[]> states = new();
+        public List<float[]> actions = new();
+        public List<float> log_probs = new();
+        public List<float> rewards = new();
+        public List<float> values = new();
+    }
+
     public class Agent
     {
         public int x;
         public int y;
         public double theta;
-        double ta;
-        float speed;
+        public float speed;
         double[][] vertices;
         bool alive = true;
         Color colour = Color.Red;
         Eye[] eyes;
         Brain brain;
+        public Trajectory trajectory;
 
-        public Agent(int x, int y, float speed)
+        const float max_speed = 8f;
+        const float min_speed = 1f;
+        const float max_steering = 0.15f;
+        const float max_accel = 0.5f;
+
+        int stagnation_counter = 0;
+        int last_x;
+        const int stagnation_limit = 500;
+
+        public Agent(int x, int y, float speed, Brain brain)
         {
             this.x = x;
             this.y = y;
+            this.last_x = x;
             this.theta = 0;
-            this.ta = 0;
             this.speed = speed;
-            this.brain = new Brain();
+            this.brain = brain;
+            this.trajectory = new Trajectory();
 
-            //the corners that make up the shape of the agent on screen, expressed as a  tuple of radius and angle
             this.vertices = [[0, 0], [20, 0.9 * Math.PI], [15, Math.PI], [20, 1.1 * Math.PI]];
 
             int vision_range = 300;
@@ -56,72 +74,77 @@ namespace ObstacleCourse
         {
             if (!this.alive) { return; }
 
-            //get sensory input from the eyes
-            double[] d = new double[5];
+            int prev_x = this.x;
+
+            float[] state = new float[7];
             for (int i = 0; i < this.eyes.Length; i++)
             {
-                d[i] = this.eyes[i].get_distance(this) / this.eyes[i].max_dist;
+                state[i] = (float)(this.eyes[i].get_distance(this) / this.eyes[i].max_dist);
             }
+            state[5] = (float)(this.theta / (2 * Math.PI));
+            state[6] = this.speed / max_speed;
 
-            //run brain on input
-            torch.Tensor y = this.brain.infer(d, this.theta);
+            var (action, log_prob, value) = this.brain.act(state);
 
-            //=====================================================
-
-            //hand-coded rules to decide where to turn
-            if (d[0] < 0.3) { this.theta = this.theta - 0.2; }
-            if (d[2] < 0.15) { this.speed = 1; } else { this.speed = 3; }
-            if (d[4] < 0.3) { this.theta = this.theta + 0.2; }
-
-            // add random noise to ta
-            this.ta = this.ta + 0.0005 * (Globals.rnd.Next(0, 100) - 50);
-
-            // bias noise towards pointing theta forward
-            if (this.theta > 0) { this.ta -= 0.003; }
-            if (this.theta < 0) { this.ta += 0.003; }
-
-            // bound noise from above and below
-            this.ta = Math.Max(Math.Min(0.05, this.ta), -0.05);
-
-            // apply noise
-            this.theta = this.theta + this.ta;
+            this.theta += action[0] * max_steering;
             this.theta = this.theta % (2 * Math.PI);
+            this.speed += action[1] * max_accel;
+            this.speed = Math.Clamp(this.speed, min_speed, max_speed);
 
-            //=====================================================
-
-            //Move in the direction theta by the distance speed
             this.x = this.x + (int)(this.speed * Math.Cos(this.theta));
             this.y = this.y + (int)(this.speed * Math.Sin(this.theta));
+
+            float reward = (this.x - prev_x) * 0.01f;
+
+            this.trajectory.states.Add(state);
+            this.trajectory.actions.Add(action);
+            this.trajectory.log_probs.Add(log_prob);
+            this.trajectory.values.Add(value);
+            this.trajectory.rewards.Add(reward);
+
+            if (this.x > this.last_x)
+            {
+                this.last_x = this.x;
+                this.stagnation_counter = 0;
+            }
+            else
+            {
+                this.stagnation_counter++;
+            }
+
+            if (this.stagnation_counter > stagnation_limit)
+            {
+                this.die();
+            }
         }
 
         public void die()
         {
+            if (!this.alive) return;
             this.alive = false;
-            //removes this agent from the live agents list
+            if (this.trajectory.rewards.Count > 0)
+            {
+                this.trajectory.rewards[^1] -= 5.0f;
+            }
             Globals.live_agents.Remove(this);
-            //changes the way dead agents show up on screen
             this.colour = Color.LightGray;
         }
 
         public void draw(PaintEventArgs e)
         {
-            //if not on the screen, don't draw
             if (this.x + Globals.window_slide < -10) { return; }
 
             Pen pen = new Pen(this.colour, 3);
             Point[] draw_vertices = new Point[this.vertices.Length];
 
-            //draw all the vertices
             for (int i = 0; i < this.vertices.Length; i++)
             {
                 double[] v = this.vertices[i];
                 double r = v[0];
                 double psi = v[1];
 
-                //rotate the vertex by the angle of the agent, then mod by 2PI
                 psi = (psi + this.theta) % (2 * Math.PI);
 
-                //convert into cartesian and translate by the agents position, as well as window_slide
                 int x = this.x + (int)(r * Math.Cos(psi)) + Globals.window_slide;
                 int y = this.y + (int)(r * Math.Sin(psi));
 
@@ -129,46 +152,76 @@ namespace ObstacleCourse
             }
 
             e.Graphics.DrawPolygon(pen, draw_vertices);
-
-            //if (this.alive)
-            //{
-            //    foreach (Eye eye in this.eyes) { eye.draw(e, this); }
-            //}
         }
     }
 
     public class Brain
     {
-
-        Linear lin1;
-        Linear lin2;
-        Sequential seq;
-        OptimizerHelper optimizer;
+        Sequential backbone;
+        Linear actor_head;
+        Linear critic_head;
+        Parameter log_std;
+        public OptimizerHelper optimizer;
 
         public Brain()
         {
-            this.lin1 = Linear(6, 100);
-            this.lin2 = Linear(100, 2);
-            this.seq = Sequential(("lin1", this.lin1), ("relu1", ReLU()), ("drop1", Dropout(0.05)), ("lin2", this.lin2), ("tanh", Tanh()));
+            this.backbone = Sequential(
+                ("fc1", Linear(7, 128)),
+                ("relu1", ReLU()),
+                ("fc2", Linear(128, 64)),
+                ("relu2", ReLU())
+            );
+            this.actor_head = Linear(64, 2);
+            this.critic_head = Linear(64, 1);
+            this.log_std = new Parameter(torch.zeros(2));
 
-            this.optimizer = torch.optim.Adam(this.seq.parameters());
+            var all_params = this.backbone.parameters()
+                .Concat(this.actor_head.parameters())
+                .Concat(this.critic_head.parameters())
+                .Append(this.log_std);
+            this.optimizer = torch.optim.Adam(all_params, lr: 3e-4);
         }
 
-        public torch.Tensor infer(double[] eye_input, double theta)
+        public (float[] action, float log_prob, float value) act(float[] state)
         {
-            float[] o = new float[eye_input.Length + 1];
-
-            for (int i = 0; i < eye_input.Length; i++)
+            using (torch.no_grad())
             {
-                o[i] = (float)eye_input[i];
+                var input = torch.from_array(state);
+                var features = this.backbone.forward(input);
+                var means = this.actor_head.forward(features);
+                var std = this.log_std.exp();
+                var dist = torch.distributions.Normal(means, std);
+                var sampled = dist.sample();
+                var log_prob = dist.log_prob(sampled).sum();
+                var value = this.critic_head.forward(features).squeeze(-1);
+
+                float[] action = new float[2];
+                action[0] = sampled[0].item<float>();
+                action[1] = sampled[1].item<float>();
+
+                return (action, log_prob.item<float>(), value.item<float>());
             }
+        }
 
-            o[eye_input.Length] = (float)(theta / (2 * Math.PI) );
+        public (torch.Tensor new_log_probs, torch.Tensor values, torch.Tensor entropy) evaluate(torch.Tensor states, torch.Tensor actions)
+        {
+            var features = this.backbone.forward(states);
+            var means = this.actor_head.forward(features);
+            var std = this.log_std.exp().expand_as(means);
+            var dist = torch.distributions.Normal(means, std);
+            var new_log_probs = dist.log_prob(actions).sum(-1);
+            var entropy = dist.entropy().sum(-1);
+            var values = this.critic_head.forward(features).squeeze(-1);
 
-            torch.Tensor t = torch.from_array(o);
-            torch.Tensor a = this.seq.forward(t);
+            return (new_log_probs, values, entropy);
+        }
 
-            return a;
+        public IEnumerable<Parameter> parameters()
+        {
+            return this.backbone.parameters()
+                .Concat(this.actor_head.parameters())
+                .Concat(this.critic_head.parameters())
+                .Append(this.log_std);
         }
     }
 
@@ -186,7 +239,6 @@ namespace ObstacleCourse
         {
             double d = this.get_distance(a);
 
-            //draw a line out of the front of the agent to the closest obstacle
             Color c = Color.Yellow;
 
             if (d == this.max_dist)
@@ -205,9 +257,7 @@ namespace ObstacleCourse
 
             foreach (Obstacle o in Globals.obstacles)
             {
-                //if the obstacle is behind the eye, skip
                 if ((o.x - a.x) * Math.Cos(a.theta) + (o.y - a.y) * Math.Sin(a.theta) < 0) { continue; }
-                //if the obstacle is further than the eye can see, skip
                 if (Math.Sqrt(Math.Pow(a.x - o.x, 2) + Math.Pow(a.y - o.y, 2)) > this.max_dist + o.rad) { continue; }
 
                 d = Math.Abs(this.get_distance_to_obstacle(a, o));
@@ -224,23 +274,19 @@ namespace ObstacleCourse
 
         public double get_disance_to_border(Agent a, int border_y)
         {
-            //if (Math.Sin(a.theta + this.psi) == 0) { return this.max_dist; }
             if ((border_y - a.y) * Math.Sin(a.theta + this.psi) <= 0) { return this.max_dist; }
             return Math.Abs((border_y - a.y) / Math.Sin(a.theta + this.psi));
         }
 
         public double get_distance_to_obstacle(Agent a, Obstacle o)
         {
-            //these two doubles are elements of a cartesian vector representing the direction the eye is looking in, of length one
             double eye_x = Math.Cos(a.theta + this.psi);
             double eye_y = Math.Sin(a.theta + this.psi);
 
-            //these two doubles are elements of a cartesian vector from the agent to the centre of the obstacle
             double x_trans = (o.x - a.x);
             double y_trans = (o.y - a.y);
             double h = Math.Sqrt(Math.Pow(x_trans, 2) + Math.Pow(y_trans, 2));
 
-            //using the dot product, calculate the angle between the eye and the vector to the obstacle
             double cosine = (x_trans * eye_x + y_trans * eye_y) / h;
 
             double alpha = Math.Acos(cosine);

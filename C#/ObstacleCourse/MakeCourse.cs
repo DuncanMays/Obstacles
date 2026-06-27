@@ -266,7 +266,7 @@
             kill_rad = Math.Min(kill_rad, 60);
             double chase_speed = 1.5 + difficulty * 1.0;
 
-            int ty = Globals.top_border + zone_rad + rng.Next(0, Globals.bottom_border - Globals.top_border - 2 * zone_rad);
+            int ty = (Globals.top_border + Globals.bottom_border)/2 + rng.Next(-100, 100);
             new Tracker(x + chunk_width / 2, ty, kill_rad, zone_rad, chase_speed, Color.Magenta);
         }
     }
