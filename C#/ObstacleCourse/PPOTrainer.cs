@@ -43,7 +43,9 @@ namespace ObstacleCourse
             int n = all_states.Count;
             if (n == 0) return;
 
-            var states_tensor = torch.zeros(n, 7);
+            int num_inputs = 13;
+
+            var states_tensor = torch.zeros(n, num_inputs);
             var actions_tensor = torch.zeros(n, 2);
             var old_log_probs_tensor = torch.zeros(n);
             var advantages_tensor = torch.zeros(n);
@@ -51,7 +53,7 @@ namespace ObstacleCourse
 
             for (int i = 0; i < n; i++)
             {
-                for (int j = 0; j < 7; j++)
+                for (int j = 0; j < num_inputs; j++)
                     states_tensor[i, j] = torch.tensor(all_states[i][j]);
                 for (int j = 0; j < 2; j++)
                     actions_tensor[i, j] = torch.tensor(all_actions[i][j]);

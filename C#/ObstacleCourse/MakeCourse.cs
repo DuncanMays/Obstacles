@@ -217,11 +217,13 @@
             double speed = 0.004 + difficulty * 0.003;
             int bandwidth = 100 + (int)(difficulty * 80);
             int rad = 35 + (int)(difficulty * 15);
+            int min_spacing = rad * 4 + 60;
 
             for (int i = 0; i < count; i++)
             {
                 double phase = rng.NextDouble() * 2 * Math.PI;
-                int sx = x + (chunk_width / (count + 1)) * (i + 1);
+                int spacing = Math.Max(chunk_width / (count + 1), min_spacing);
+                int sx = x + spacing * (i + 1);
                 new Slider(sx, mid, rad, bandwidth, phase, speed, Color.Red);
             }
         }

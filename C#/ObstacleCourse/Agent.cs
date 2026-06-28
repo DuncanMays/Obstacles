@@ -55,8 +55,8 @@ namespace ObstacleCourse
             this.vertices = [[0, 0], [20, 0.9 * Math.PI], [15, Math.PI], [20, 1.1 * Math.PI]];
 
             int vision_range = 300;
-            int num_eyes = 5;
-            double eye_spread = 0.8;
+            int num_eyes = 11;
+            double eye_spread = 2.5;
 
             this.eyes = new Eye[num_eyes];
 
@@ -76,13 +76,13 @@ namespace ObstacleCourse
 
             int prev_x = this.x;
 
-            float[] state = new float[7];
+            float[] state = new float[this.eyes.Length + 2];
             for (int i = 0; i < this.eyes.Length; i++)
             {
                 state[i] = (float)(this.eyes[i].get_distance(this) / this.eyes[i].max_dist);
             }
-            state[5] = (float)(this.theta / (2 * Math.PI));
-            state[6] = this.speed / max_speed;
+            state[this.eyes.Length] = (float)(this.theta / (2 * Math.PI));
+            state[this.eyes.Length + 1] = this.speed / max_speed;
 
             var (action, log_prob, value) = this.brain.act(state);
 
@@ -152,6 +152,11 @@ namespace ObstacleCourse
             }
 
             e.Graphics.DrawPolygon(pen, draw_vertices);
+
+            // if (this.alive)
+            // {
+            //    foreach (Eye eye in this.eyes) { eye.draw(e, this); }
+            // }
         }
     }
 
@@ -166,7 +171,7 @@ namespace ObstacleCourse
         public Brain()
         {
             this.backbone = Sequential(
-                ("fc1", Linear(7, 128)),
+                ("fc1", Linear(13, 128)),
                 ("relu1", ReLU()),
                 ("fc2", Linear(128, 64)),
                 ("relu2", ReLU())
@@ -239,11 +244,11 @@ namespace ObstacleCourse
         {
             double d = this.get_distance(a);
 
-            Color c = Color.Yellow;
+            Color c = Color.Black;
 
             if (d == this.max_dist)
             {
-                c = Color.Red;
+                c = Color.LightGray;
             }
 
             Pen pen2 = new Pen(c, 3);
@@ -257,7 +262,9 @@ namespace ObstacleCourse
 
             foreach (Obstacle o in Globals.obstacles)
             {
-                if ((o.x - a.x) * Math.Cos(a.theta) + (o.y - a.y) * Math.Sin(a.theta) < 0) { continue; }
+                //if the obstacle is behind the eye, skip
+                if ((o.x - a.x) * Math.Cos(this.psi) + (o.y - a.y) * Math.Sin(this.psi) < 0) { continue; }
+                //if the obstacle is further than the eye can see, skip
                 if (Math.Sqrt(Math.Pow(a.x - o.x, 2) + Math.Pow(a.y - o.y, 2)) > this.max_dist + o.rad) { continue; }
 
                 d = Math.Abs(this.get_distance_to_obstacle(a, o));
