@@ -32,6 +32,7 @@ namespace ObstacleCourse
         Eye[] eyes;
         Brain brain;
         public Trajectory trajectory;
+        public float[] last_state;
 
         const float max_speed = 8f;
         const float min_speed = 1f;
@@ -84,7 +85,12 @@ namespace ObstacleCourse
             state[this.eyes.Length] = (float)(this.theta / (2 * Math.PI));
             state[this.eyes.Length + 1] = this.speed / max_speed;
 
-            var (action, log_prob, value) = this.brain.act(state);
+            float[] state_suffix = this.last_state ?? new float[state.Length];
+            float[] full_state = state.Concat(state_suffix).ToArray();
+
+            var (action, log_prob, value) = this.brain.act(full_state);
+
+            this.last_state = state;
 
             this.theta += action[0] * max_steering;
             this.theta = this.theta % (2 * Math.PI);
@@ -96,7 +102,7 @@ namespace ObstacleCourse
 
             float reward = (this.x - prev_x) * 0.01f;
 
-            this.trajectory.states.Add(state);
+            this.trajectory.states.Add(full_state);
             this.trajectory.actions.Add(action);
             this.trajectory.log_probs.Add(log_prob);
             this.trajectory.values.Add(value);
@@ -171,7 +177,7 @@ namespace ObstacleCourse
         public Brain()
         {
             this.backbone = Sequential(
-                ("fc1", Linear(13, 128)),
+                ("fc1", Linear(26, 128)),
                 ("relu1", ReLU()),
                 ("fc2", Linear(128, 64)),
                 ("relu2", ReLU())
